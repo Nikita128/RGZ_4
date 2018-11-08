@@ -1,6 +1,6 @@
 ﻿namespace RGZ_4
 {
-    class Matrix
+    public class Matrix
     {
         private double[,] elem;
 
@@ -84,6 +84,17 @@
             return temp;
         }
 
+        public static Matrix operator +(int x, Matrix b)
+        {
+            Matrix temp = new Matrix(b.RowCount, b.ColumnCount);
+
+            for (int i = 0; i < b.RowCount; i++)
+                for (int j = 0; j < b.ColumnCount; j++)
+                    temp.elem[i, j] = b.elem[i, j] + x;
+
+            return temp;
+        }
+
         public static Matrix operator -(Matrix a, Matrix b)
         {
             if (a.RowCount != b.RowCount || a.ColumnCount != b.ColumnCount)
@@ -127,6 +138,12 @@
 
         public static Matrix operator *(Matrix a, Matrix b)
         {
+            if (a.elem.Length == 1)
+                return a[0, 0] * b;
+
+            if (b.elem.Length == 1)
+                return b[0, 0] * a;
+
             if (a.ColumnCount != b.RowCount)
                 return null;
 
@@ -190,9 +207,23 @@
         public static Matrix operator /(Matrix a, Matrix b)
         {
             if (b.RowCount == b.ColumnCount && b.RowCount == 1)
-                return a / b.elem[0, 0];
+                if (b[0, 0] != 0)
+                    return a / b.elem[0, 0];
+                else
+                    return a * 0;
             return a * b.Inverse();
         }
 
+    }
+
+    public static class MatrixExtension
+    {
+        public static Matrix ToMatrix(this double x)
+        {
+            var temp = new Matrix(1, 1);
+            temp[0, 0] = x;
+
+            return temp;
+        }
     }
 }
