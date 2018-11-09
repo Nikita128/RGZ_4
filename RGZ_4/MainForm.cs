@@ -27,12 +27,15 @@ namespace RGZ_4
 
         private double[] alpha;
         private ObjectFunction[] functions;
+        private ObjectFunction[] gradient;
         private ObjectFunction objectFunction;
+
+        private Functions funcType;
 
         private Dictionary<double, double> originalObject;
         private Dictionary<double, double> model;
 
-        private List<Matrix> alphaLog;
+        private List<double[]> alphaLog;
 
         public MainForm()
         {
@@ -43,8 +46,9 @@ namespace RGZ_4
         {         
             model = null;
             alpha = null;
+            resultRichTextBox.Text = "";
 
-            double m, d, x1, x2, delta;
+            double m, d, delta;
             int n;
 
             try
@@ -52,8 +56,7 @@ namespace RGZ_4
                 m = Convert.ToDouble(mTextBox.Text);
                 d = Convert.ToDouble(dTextBox.Text);
                 n = Convert.ToInt32(nTextBox.Text);
-                x1 = Convert.ToDouble(x1TextBox.Text);
-                x2 = Convert.ToDouble(x2TextBox.Text);
+                delta = Convert.ToDouble(duTextBox.Text);
             }
             catch (FormatException)
             {
@@ -68,6 +71,7 @@ namespace RGZ_4
                 alpha = new double[1] { 0 };
 
                 objectFunction = Function.LinearFunction1;
+                funcType = Functions.Linear_1;
             }
             else if (l2RadioButton.Checked)
             {
@@ -77,6 +81,7 @@ namespace RGZ_4
                 alpha = new double[2] { 0, 0 };
 
                 objectFunction = Function.LinearFunction2;
+                funcType = Functions.Linear_2;
             }
             else if (nl1RadioButton.Checked)
             {
@@ -84,18 +89,34 @@ namespace RGZ_4
                 functions[0] = (u => { return 1; });
                 functions[1] = (u => { return u; });
                 functions[2] = (u => { return u * u; });
+
+                gradient = new ObjectFunction[3];
+                gradient[0] = (u => { return 1; });
+                gradient[1] = (u => { return u; });
+                gradient[2] = (u => { return u * u; });
+
                 alpha = new double[3] { 0, 0, 0 };
 
                 objectFunction = Function.NonLinearFunction1;
+                funcType = Functions.NonLinear_1;
             }
             else if (nl2RadioButton.Checked)
             {
                 functions = new ObjectFunction[2];
-                functions[0] = (u => { return 1; });
-                functions[1] = (u => { return Math.Sin(u); });
+                /*functions[0] = (u => { return Math.Sin(u); });
+                functions[1] = (u => { return Math.Cos(u); });*/
+
+                gradient = new ObjectFunction[2];
+                /*gradient[0] = (u => { return Math.Sin(u); });
+                gradient[1] = (u => { return Math.Cos(u); });*/
+
+                gradient[0] = (u => { return Math.Pow(u, alpha[1]); });
+                gradient[1] = (u => { return alpha[0] * Math.Pow(u, alpha[1]) * Math.Log(u); });
+
                 alpha = new double[2] { 0, 0 };
 
                 objectFunction = Function.NonLinearFunction2;
+                funcType = Functions.NonLinear_2;
             }
             else
             {
@@ -106,27 +127,33 @@ namespace RGZ_4
             adaptButton.Enabled = true;
             showButton.Enabled = true;
 
-            if (x1 > x2)
-            {
-                double t = x1;
-                x1 = x2;
-                x2 = t;
-            }
-
-            delta = (x2 - x1) / n;
-
             originalObject = new Dictionary<double, double>();
 
-            for (double i = x1; i < x2; i += delta)
+            for (double i = 0.01; i < delta * n; i += delta)
                 originalObject.Add(i, objectFunction(i) + Statistics.MpcGenerator(m, 0, d, 1)[0]);
         }
 
         private double GetModel(double u)
-        {            
+        {
+            if (funcType == Functions.NonLinear_2)
+                return alpha[0] * Math.Pow(u, alpha[1]);
+
             double result = 0;
             for (int i = 0; i < alpha.Length; i++)
                 result += alpha[i] * functions[i](u);
             return result;                 
+        }
+
+        private double GetModel(double u, Matrix mAlpha)
+        {
+            if (funcType == Functions.NonLinear_2)
+                return mAlpha[0, 0] * Math.Pow(u, mAlpha[1, 0]);
+
+            double result = 0;
+
+            for (int i = 0; i < mAlpha.RowCount; i++)
+                result += mAlpha[i, 0] * functions[i](u);
+            return result;
         }
 
         private void showButton_Click(object sender, EventArgs e)
@@ -137,14 +164,13 @@ namespace RGZ_4
                 return;
             }
 
-            double x1, x2, delta;
+            double delta;
             int n;
 
             try
             {
                 n = Convert.ToInt32(nTextBox.Text);
-                x1 = Convert.ToDouble(x1TextBox.Text);
-                x2 = Convert.ToDouble(x2TextBox.Text);
+                delta = Convert.ToDouble(duTextBox.Text);
             }
             catch (FormatException)
             {
@@ -152,7 +178,7 @@ namespace RGZ_4
                 return;
             }
 
-            delta = Math.Abs(x1 - x2) / n;
+            results.Width = 600;
 
             ScatterSeries orObj = new ScatterSeries()
             {
@@ -163,19 +189,21 @@ namespace RGZ_4
             foreach (var v in originalObject)
                 orObj.Points.Add(new ScatterPoint(v.Key, v.Value, 1.8));
 
-            FunctionSeries f = new FunctionSeries(T => { return objectFunction(T); }, x1, x2, delta)
+            FunctionSeries f = new FunctionSeries(T => { return objectFunction(T); }, 0.01, delta * n, delta)
             {
                 Title = "Объект"
             };
 
             PlotModel plot = new PlotModel()
             {
-                Title = "График"
+                Title = "График модели и объекта"
             };
 
             PlotView view = new PlotView()
             {
                 Dock = DockStyle.Fill,
+                Height = 550,
+                Width = 550,
                 BackColor = Color.White,
                 Model = plot
             };
@@ -184,9 +212,43 @@ namespace RGZ_4
             plot.Series.Add(f);
 
             FunctionSeries modelFunctionSeries = null;
+            PlotModel alphaPlot = null;
+            PlotView alphaView = null;
+            FunctionSeries[] alphaSeries = null;
 
             if (model != null)
             {
+                results.Width = 1150;
+
+                alphaSeries = new FunctionSeries[alpha.Length];
+                for (int i = 0; i < alphaSeries.Length; i++)
+                    alphaSeries[i] = new FunctionSeries()
+                    {
+                        Title = "Alpha" + (i + 1)
+                    };
+                
+                for (int i = 0; i < alphaLog.Count; i++)
+                {
+                    for (int j = 0; j < alphaSeries.Length; j++)
+                        alphaSeries[j].Points.Add(new DataPoint(i, alphaLog.ElementAt(i)[j]));
+                }
+
+                alphaPlot = new PlotModel()
+                {
+                    Title = "График подстройки параметров"
+                };
+
+                alphaView = new PlotView()
+                {
+                    Dock = DockStyle.Right,
+                    Height = 550,
+                    Width = 550,
+                    BackColor = Color.White,
+                    Model = alphaPlot
+                };
+
+                view.Dock = DockStyle.Left;
+
                 modelFunctionSeries = new FunctionSeries()
                 {
                     Title = "Модель"
@@ -196,9 +258,13 @@ namespace RGZ_4
                     modelFunctionSeries.Points.Add(new DataPoint(t.Key, t.Value));
 
                 plot.Series.Add(modelFunctionSeries);
-            }     
 
-            results.Controls.Add(view);            
+                for (int i = 0; i < alphaSeries.Length; i++)
+                    alphaPlot.Series.Add(alphaSeries[i]);
+            }
+
+            results.Controls.Add(view);
+            results.Controls.Add(alphaView);
 
             results.Refresh();
             results.ShowDialog();
@@ -207,11 +273,19 @@ namespace RGZ_4
 
         private void adaptButton_Click(object sender, EventArgs e)
         {
-            /*Random r = new Random(DateTime.Now.Millisecond);
-            for (int i = 0; i < alpha.Length; i++)
-                alpha[i] = r.Next(-10, 10);*/
+            double g;
 
-            alpha.Fill(0);
+            try
+            {
+                g = Convert.ToDouble(gTextBox.Text);
+            }
+            catch (FormatException)
+            {
+                MessageBox.Show("Введены некорректные данные.", "Ошибка ввода");
+                return;
+            }
+
+            alpha.Fill(0.1);
 
             model = new Dictionary<double, double>();
 
@@ -219,23 +293,44 @@ namespace RGZ_4
             Matrix mFunc = new Matrix(functions.Length, 1);
             Matrix prevMAlpha = new Matrix(alpha);
 
-            alphaLog = new List<Matrix>();
+            alphaLog = new List<double[]>();
 
             foreach (var obj in originalObject)
             {
-                for(int j = 0; j < functions.Length; j++)                
-                    mFunc[j, 0] = functions[j](obj.Key);
+                if (funcType == Functions.Linear_1 || funcType == Functions.Linear_2)
+                {
+                    for (int j = 0; j < functions.Length; j++)
+                        mFunc[j, 0] = functions[j](obj.Key);
 
-                mAlpha = prevMAlpha + (((obj.Value.ToMatrix() - (mFunc.T() * prevMAlpha)) / (5 + (mFunc.T() * mFunc))) * mFunc);
-                alphaLog.Add(mAlpha);
-                prevMAlpha = mAlpha;
+                    mAlpha = prevMAlpha + (((obj.Value - (mFunc.T() * prevMAlpha)[0, 0]) / (g + (mFunc.T() * mFunc)[0, 0])) * mFunc);
+                }
+                else if (funcType == Functions.NonLinear_1 || funcType == Functions.NonLinear_2)
+                {
+                    for (int j = 0; j < functions.Length; j++)
+                        mFunc[j, 0] = gradient[j](obj.Key);
 
-                /*for (int i = 0; i < mAlpha.RowCount; i++)
-                    prevMAlpha[i, 0] = mAlpha[i, 0];*/
+                    mAlpha = prevMAlpha + (((obj.Value - GetModel(obj.Key, prevMAlpha)) /
+                        ((mFunc.T() * GetModel(obj.Key, prevMAlpha) * mFunc * GetModel(obj.Key, prevMAlpha))[0, 0] + g)) * (mFunc * GetModel(obj.Key, prevMAlpha)));
+                }
+
+                alphaLog.Add(alpha);
+                //prevMAlpha = mAlpha;
+
+                for (int j = 0; j < alpha.Length; j++)
+                    prevMAlpha[j, 0] = mAlpha[j, 0];
+
+                alpha = mAlpha.ToArray();
             }
 
+            String resultString = "";
+
             for (int i = 0; i < alpha.Length; i++)
+            {
                 alpha[i] = mAlpha[i, 0];
+                resultString += "Alpha" + (i + 1) + " = " + alpha[i] + ";\n";
+            }
+
+            resultRichTextBox.Text = resultString;
 
             for (int i = 0; i < originalObject.Count; i++)            
                 model.Add(originalObject.ElementAt(i).Key, GetModel(originalObject.ElementAt(i).Key));

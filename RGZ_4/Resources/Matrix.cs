@@ -214,6 +214,14 @@
             return a * b.Inverse();
         }
 
+        public double[] ToArray()
+        {
+            var temp = new double[elem.Length];
+            for (int i = 0; i < temp.Length; i++)
+                temp[i] = elem[i, 0];
+
+            return temp;
+        }
     }
 
     public static class MatrixExtension

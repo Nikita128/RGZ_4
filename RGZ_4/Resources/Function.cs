@@ -29,7 +29,8 @@ namespace RGZ_4
 
         public static double NonLinearFunction2(double x)
         {
-            return (0.7 * Math.Sin(x)) + 1;
+            //return ((0.3 * Math.Sin(x)) + Math.Cos(x));
+            return 3 * Math.Pow(x, 3);
         }
     }
 }
